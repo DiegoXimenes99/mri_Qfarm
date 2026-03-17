@@ -1,0 +1,247 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --black-piano: #0a0a0a;
+    --black-glossy: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+    --primary-blue: #007bff;
+    --primary-blue-hover: #0056b3;
+    --text-white: #ffffff;
+    --text-gray: #a0a0a0;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --shadow-premium: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background-color: transparent;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#app {
+    display: none; /* Hidden by default, shown via Lua */
+    width: 80%;
+    height: 80%;
+    max-width: 1200px;
+    max-height: 800px;
+    background: var(--black-glossy);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    box-shadow: var(--shadow-premium);
+    color: var(--text-white);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Glassmorphism Header */
+header {
+    padding: 20px 40px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    text-transform: uppercase;
+}
+
+header h1 span {
+    color: var(--primary-blue);
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-gray);
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: color 0.3s;
+}
+
+.close-btn:hover {
+    color: var(--text-white);
+}
+
+/* Main Content Area */
+main {
+    flex: 1;
+    padding: 40px;
+    overflow-y: auto;
+}
+
+/* Farm Selection Card Grid */
+.farm-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.farm-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 15px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.farm-card:hover {
+    background: rgba(0, 123, 255, 0.1);
+    border-color: var(--primary-blue);
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0, 123, 255, 0.2);
+}
+
+.farm-card i {
+    font-size: 2.5rem;
+    color: var(--primary-blue);
+    margin-bottom: 15px;
+}
+
+.farm-card h2 {
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+}
+
+.farm-card p {
+    color: var(--text-gray);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* Creator Dashboard Layout */
+.dashboard-container {
+    display: flex;
+    height: 100%;
+    gap: 30px;
+}
+
+.sidebar {
+    width: 250px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 15px;
+    padding: 20px;
+}
+
+.sidebar-nav {
+    list-style: none;
+}
+
+.nav-item {
+    padding: 12px 15px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    color: var(--text-gray);
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.nav-item:hover, .nav-item.active {
+    background: var(--primary-blue);
+    color: var(--text-white);
+}
+
+.content-panel {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 15px;
+    padding: 30px;
+}
+
+/* Form Elements */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-gray);
+    font-size: 0.85rem;
+}
+
+input, select, textarea {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px 15px;
+    color: var(--text-white);
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+}
+
+.btn {
+    padding: 12px 25px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: var(--primary-blue);
+    color: var(--text-white);
+}
+
+.btn-primary:hover {
+    background: var(--primary-blue-hover);
+}
+
+.btn-danger {
+    background: #ff4d4d;
+    color: var(--text-white);
+}
+
+.btn-danger:hover {
+    background: #cc0000;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-gray);
+}

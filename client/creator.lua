@@ -7,12 +7,7 @@ local newFarm = {
             width = nil,
             length = nil
         },
-        items = {},
-        policeAlert = {
-            enabled = false,
-            chance = 30,
-            type = "drugsell" -- Tipo de alerta padrão no ps-dispatch
-        }
+        items = {}
     },
     group = {
         name = nil,
@@ -62,10 +57,8 @@ local function deleteFarm(args)
         args.farmKey
     )
     if result then
-        local result_db = lib.callback.await("mri_Qfarm:server:DeleteFarm", false, farm.farmId)
-        if result_db then
-            args.callback()
-        end
+        lib.callback.await("mri_Qfarm:server:DeleteFarm", false, farm.farmId)
+        args.callback()
     else
         args.callbackCancel(args.farmKey)
     end
@@ -167,172 +160,6 @@ local function changeFarmLocation(args)
     end
     args.callback(args.farmKey)
 end
-
-local function changeFarmStart(args)
-    local alert = lib.alertDialog(
-        {
-            header = locale("actions.farm.nostart.alert.title"),
-            content = locale("actions.farm.nostart.alert.description"),
-            centered = true,
-            cancel = true,
-            labels = {
-                cancel = locale("actions.cancel"),
-                confirm = locale("actions.confirm")
-            }
-        }
-    )
-    if alert == "confirm" then
-        Farms[args.farmKey].config.nostart = not Farms[args.farmKey].config.nostart
-        lib.notify(
-            {
-                type = "success",
-                description = locale("notify.updated")
-            }
-        )
-    end
-    args.callback(args.farmKey)
-end
-
-local function changeFarmAFK(args)
-    local alert = lib.alertDialog(
-        {
-            header = locale("actions.farm.afk.alert.title"),
-            content = locale("actions.farm.afk.alert.description"),
-            centered = true,
-            cancel = true,
-            labels = {
-                cancel = locale("actions.cancel"),
-                confirm = locale("actions.confirm")
-            }
-        }
-    )
-    if alert == "confirm" then
-        Farms[args.farmKey].config.afk = not Farms[args.farmKey].config.afk
-        lib.notify(
-            {
-                type = "success",
-                description = locale("notify.updated")
-            }
-        )
-    end
-    args.callback(args.farmKey)
-end
-
--- Nova função para alternar o alerta policial
-local function togglePoliceAlert(args)
-    local alert = lib.alertDialog({
-        header = locale("actions.farm.police_alert.alert.title"),
-        content = locale("actions.farm.police_alert.alert.description"),
-        centered = true,
-        cancel = true,
-        labels = {
-            cancel = locale("actions.cancel"),
-            confirm = locale("actions.confirm")
-        }
-    })
-
-    if alert == "confirm" then
-        if not Farms[args.farmKey].config.policeAlert then
-            Farms[args.farmKey].config.policeAlert = {
-                enabled = true,
-                chance = 30,
-                type = "drugsell"
-            }
-        else
-            Farms[args.farmKey].config.policeAlert.enabled = not Farms[args.farmKey].config.policeAlert.enabled
-        end
-
-        lib.notify({
-            type = "success",
-            description = locale("notify.updated")
-        })
-    end
-    args.callback(args.farmKey)
-end
-
-
--- Nova função para configurar a chance de alerta policial
-local function setPoliceAlertChance(args)
-    local farm = Farms[args.farmKey]
-
-    -- Garantir que a estrutura policeAlert existe
-    if not farm.config.policeAlert then
-        farm.config.policeAlert = {
-            enabled = true,
-            chance = 30,
-            type = "drugsell"
-        }
-    end
-
-    local input = lib.inputDialog(
-        locale("actions.farm.police_alert_chance"),
-        {
-            {
-                type = "number",
-                label = locale("actions.farm.police_alert_chance"),
-                description = locale("actions.farm.description_police_alert_chance"),
-                default = farm.config.policeAlert.chance or 30,
-                required = true,
-                min = 0,
-                max = 100
-            }
-        }
-    )
-
-    if input then
-        farm.config.policeAlert.chance = tonumber(input[1])
-        lib.notify({
-            type = "success",
-            description = locale("notify.updated")
-        })
-    end
-    args.callback(args.farmKey)
-end
-
-local function setPoliceAlertType(args)
-    local farm = Farms[args.farmKey]
-
-    -- Garantir que a estrutura policeAlert existe
-    if not farm.config.policeAlert then
-        farm.config.policeAlert = {
-            enabled = true,
-            chance = 30,
-            type = "drugsell"
-        }
-    end
-
-    -- Lista de tipos de alertas disponíveis no ps-dispatch
-    local alertTypes = {
-        {value = "drugsell", label = locale("actions.farm.alert_types.drugsell")},
-        {value = "susactivity", label = locale("actions.farm.alert_types.susactivity")},
-        {value = "houserobbery", label = locale("actions.farm.alert_types.houserobbery")},
-        {value = "storerobbery", label = locale("actions.farm.alert_types.storerobbery")}
-    }
-
-    local input = lib.inputDialog(
-        locale("actions.farm.police_alert_type"),
-        {
-            {
-                type = "select",
-                label = locale("actions.farm.police_alert_type"),
-                description = locale("actions.farm.description_police_alert_type"),
-                default = farm.config.policeAlert.type or "drugsell",
-                required = true,
-                options = alertTypes
-            }
-        }
-    )
-
-    if input then
-        farm.config.policeAlert.type = input[1]
-        lib.notify({
-            type = "success",
-            description = locale("notify.updated")
-        })
-    end
-    args.callback(args.farmKey)
-end
-
 
 local function changePointLocation(args)
     local location = nil
@@ -728,262 +555,6 @@ function setGainStress(args)
             itemKey = args.itemKey
         }
     )
-end
-
--- Adicionar esta função para configurar o alerta policial por item
-local function setItemPoliceAlert(args)
-    local farm = Farms[args.farmKey]
-    local item = farm.config.items[args.itemKey]
-
-    -- Garantir que a estrutura policeAlert do item existe
-    if not item.policeAlert then
-        item.policeAlert = {
-            chance = farm.config.policeAlert and farm.config.policeAlert.chance or 30,
-            type = farm.config.policeAlert and farm.config.policeAlert.type or "drugsell"
-        }
-    end
-
-    local input = lib.inputDialog(
-        locale("actions.item.police_alert"),
-        {
-            {
-                type = "number",
-                label = locale("actions.item.police_alert_chance"),
-                description = locale("actions.item.description_police_alert_chance"),
-                default = item.policeAlert.chance or 30,
-                required = true,
-                min = 0,
-                max = 100
-            }
-        }
-    )
-
-    if input then
-        item.policeAlert.chance = tonumber(input[1])
-        lib.notify({
-            type = "success",
-            description = locale("notify.updated")
-        })
-    end
-    args.callback(
-        {
-            farmKey = args.farmKey,
-            itemKey = args.itemKey
-        }
-    )
-end
-
--- Adicionar esta função para configurar o tipo de alerta policial por item
-local function setItemPoliceAlertType(args)
-    local farm = Farms[args.farmKey]
-    local item = farm.config.items[args.itemKey]
-
-    -- Garantir que a estrutura policeAlert do item existe
-    if not item.policeAlert then
-        item.policeAlert = {
-            chance = farm.config.policeAlert and farm.config.policeAlert.chance or 30,
-            type = farm.config.policeAlert and farm.config.policeAlert.type or "drugsell"
-        }
-    end
-
-    -- Lista de tipos de alertas disponíveis no ps-dispatch
-    local alertTypes = {
-        {value = "drugsell", label = locale("actions.farm.alert_types.drugsell")},
-        {value = "susactivity", label = locale("actions.farm.alert_types.susactivity")},
-        {value = "houserobbery", label = locale("actions.farm.alert_types.houserobbery")},
-        {value = "storerobbery", label = locale("actions.farm.alert_types.storerobbery")}
-    }
-
-    local input = lib.inputDialog(
-        locale("actions.item.police_alert_type"),
-        {
-            {
-                type = "select",
-                label = locale("actions.item.police_alert_type"),
-                description = locale("actions.item.description_police_alert_type"),
-                default = item.policeAlert.type or "drugsell",
-                required = true,
-                options = alertTypes
-            }
-        }
-    )
-
-    if input then
-        item.policeAlert.type = input[1]
-        lib.notify({
-            type = "success",
-            description = locale("notify.updated")
-        })
-    end
-    args.callback(
-        {
-            farmKey = args.farmKey,
-            itemKey = args.itemKey
-        }
-    )
-end
-
-local function resetItemPoliceAlert(args)
-    local farm = Farms[args.farmKey]
-    local item = farm.config.items[args.itemKey]
-
-    -- Remove the item-specific police alert configuration
-    item.policeAlert = nil
-
-    lib.notify({
-        type = "success",
-        description = locale("notify.updated")
-    })
-
-    args.callback({
-        farmKey = args.farmKey,
-        itemKey = args.itemKey
-    })
-end
-
-local function importFarm()
-    local input = lib.inputDialog(
-        locale("actions.import"),
-        {
-            {
-                type = "input",
-                label = locale("actions.farm.import_name"),
-                description = locale("actions.farm.description_import_name"),
-                required = true
-            },
-            {
-                type = "textarea",
-                label = locale("actions.farm.import_data"),
-                description = locale("actions.farm.description_import_data"),
-                required = true
-            }
-        }
-    )
-
-    if not input then return end
-
-    local farmName = input[1]
-    local farmData = input[2]
-
-    -- Try to decode the JSON data
-    local success, decodedData = pcall(function()
-        return json.decode(farmData)
-    end)
-
-    if not success or not decodedData then
-        lib.notify({
-            type = "error",
-            description = locale("actions.import_invalid_json")
-        })
-        return
-    end
-
-    -- Create a new farm with the imported data
-    local newFarm = {
-        name = farmName,
-        config = decodedData.config or {},
-        group = decodedData.group or {}
-    }
-
-    -- Validate the farm data
-    if not newFarm.config.items then
-        newFarm.config.items = {}
-    end
-
-    if not newFarm.config.start then
-        newFarm.config.start = {}
-    end
-
-    -- Save the new farm to the database
-    local success = lib.callback.await("mri_Qfarm:server:SaveFarm", false, newFarm)
-
-    if success then
-        lib.notify({
-            type = "success",
-            description = locale("actions.imported")
-        })
-
-        -- Refresh the farms list
-        TriggerEvent("mri_Qfarm:client:LoadFarms")
-    else
-        lib.notify({
-            type = "error",
-            description = locale("actions.not_imported")
-        })
-    end
-end
-
-local function toggleDebugPoints(args)
-    local farm = Farms[args.farmKey]
-    local item = farm.config.items[args.itemKey]
-
-    -- Toggle debug state
-    item.debugPoints = not item.debugPoints
-
-    -- Update the farm item
-    Farms[args.farmKey].config.items[args.itemKey] = item
-
-    -- Handle blips based on debug state
-    if item.debugPoints then
-        -- Create blips for all points
-        item.debugBlips = {}
-        item.debugZones = {}
-
-        for i, point in ipairs(item.points) do
-            -- Create map blip
-            local blip = AddBlipForCoord(point.x, point.y, point.z)
-            SetBlipSprite(blip, 1)
-            SetBlipColour(blip, 5) -- Yellow
-            SetBlipScale(blip, 0.8)
-            SetBlipAsShortRange(blip, true)
-            BeginTextCommandSetBlipName("STRING")
-            AddTextComponentString("Ponto De Coleta " .. i)
-            EndTextCommandSetBlipName(blip)
-
-            table.insert(item.debugBlips, blip)
-
-            -- Create polyzone visualization
-            local zone = lib.zones.sphere({
-                coords = vector3(point.x, point.y, point.z),
-                radius = 1.0,
-                debug = true,
-                inside = function()
-                    -- Optional: Add functionality when player is inside the zone
-                end
-            })
-
-            table.insert(item.debugZones, zone)
-        end
-
-        lib.notify({
-            type = "success",
-            description = locale("actions.item.debug_enabled")
-        })
-    else
-        -- Remove all blips
-        if item.debugBlips then
-            for _, blip in ipairs(item.debugBlips) do
-                RemoveBlip(blip)
-            end
-            item.debugBlips = nil
-        end
-
-        -- Remove all polyzones
-        if item.debugZones then
-            for _, zone in ipairs(item.debugZones) do
-                zone:remove()
-            end
-            item.debugZones = nil
-        end
-
-        lib.notify({
-            type = "inform",
-            description = locale("actions.item.debug_disabled")
-        })
-    end
-
-    -- Call the callback to refresh the menu
-    args.callback(args)
 end
 
 local function setRandom(args)
@@ -1388,36 +959,6 @@ local function extraItemActionMenu(args)
     lib.showContext(ctx.id)
 end
 
-local function duplicateFarm(args)
-    local farm = Farms[args.farmKey]
-    if not farm then return end
-
-    -- Create a deep copy of the farm
-    local newFarm = {
-        name = farm.name .. " (copy)",
-        config = json.decode(json.encode(farm.config)), -- Deep copy
-        group = json.decode(json.encode(farm.group))    -- Deep copy
-    }
-
-    -- Save the new farm to the database
-    local success = lib.callback.await("mri_Qfarm:server:SaveFarm", false, newFarm)
-
-    if success then
-        lib.notify({
-            type = "success",
-            description = locale("actions.duplicated")
-        })
-
-        -- Refresh the farms list
-        TriggerEvent("mri_Qfarm:client:LoadFarms")
-    else
-        lib.notify({
-            type = "error",
-            description = locale("actions.not_duplicated")
-        })
-    end
-end
-
 function listExtraItems(args)
     local farm = Farms[args.farmKey]
     local item = farm.config.items[args.itemKey]
@@ -1459,8 +1000,7 @@ function listExtraItems(args)
 end
 
 local function configMenu(args)
-    local farm = Farms[args.farmKey]
-    local item = farm.config.items[args.itemKey]
+    local item = Farms[args.farmKey].config.items[args.itemKey]
     local ctx = {
         id = "config_item",
         menu = "action_item",
@@ -1523,45 +1063,6 @@ local function configMenu(args)
                 icon = "face-tired",
                 iconAnimation = Config.IconAnimation,
                 onSelect = setGainStress,
-                args = {
-                    farmKey = args.farmKey,
-                    itemKey = args.itemKey,
-                    callback = configMenu
-                }
-            },
-            {
-                title = locale("actions.item.police_alert"),
-                description = locale("actions.item.description_police_alert",
-                    item.policeAlert and item.policeAlert.chance or locale("actions.item.global_setting")),
-                icon = "bell",
-                iconAnimation = Config.IconAnimation,
-                onSelect = setItemPoliceAlert,
-                args = {
-                    farmKey = args.farmKey,
-                    itemKey = args.itemKey,
-                    callback = configMenu
-                }
-            },
-            {
-                title = locale("actions.item.police_alert_type"),
-                description = locale("actions.item.description_police_alert_type",
-                    item.policeAlert and item.policeAlert.type or locale("actions.item.global_setting")),
-                icon = "triangle-exclamation",
-                iconAnimation = Config.IconAnimation,
-                onSelect = setItemPoliceAlertType,
-                args = {
-                    farmKey = args.farmKey,
-                    itemKey = args.itemKey,
-                    callback = configMenu
-                }
-            },
-            {
-                title = locale("actions.item.reset_police_alert"),
-                description = locale("actions.item.description_reset_police_alert"),
-                icon = "rotate-left",
-                iconAnimation = Config.IconAnimation,
-                disabled = item.policeAlert == nil,
-                onSelect = resetItemPoliceAlert,
                 args = {
                     farmKey = args.farmKey,
                     itemKey = args.itemKey,
@@ -1688,18 +1189,6 @@ local function itemActionMenu(args)
                 }
             },
             {
-                title = locale("actions.item.afk"),
-                description = locale("actions.farm.description_afk", ifThen(Farms[args.farmKey].config.afk, locale("misc.actived"), locale("misc.disabled"))),
-                icon = "person-walking",
-                iconAnimation = Config.IconAnimation,
-                onSelect = changeFarmAFK,
-                args = {
-                    farmKey = args.farmKey,
-                    itemKey = args.itemKey,
-                    callback = itemActionMenu
-                }
-            },
-            {
                 title = locale("actions.item.points"),
                 description = locale("actions.item.description_points", #item.points),
                 icon = "location-crosshairs",
@@ -1709,20 +1198,6 @@ local function itemActionMenu(args)
                 args = {
                     farmKey = args.farmKey,
                     itemKey = args.itemKey
-                }
-            },
-            {
-                title = locale("actions.item.debug_points"),
-                description = locale("actions.item.description_debug_points",
-                    ifThen(item.debugPoints, locale("misc.yes"), locale("misc.no"))),
-                icon = ifThen(item.debugPoints, "toggle-on", "toggle-off"),
-                iconColor = ifThen(item.debugPoints, ColorScheme.success, ColorScheme.danger),
-                iconAnimation = Config.IconAnimation,
-                onSelect = toggleDebugPoints,
-                args = {
-                    farmKey = args.farmKey,
-                    itemKey = args.itemKey,
-                    callback = itemActionMenu
                 }
             },
             {
@@ -1804,10 +1279,8 @@ function ListItems(args)
 end
 
 local function saveFarm(args)
-    local result_db = lib.callback.await("mri_Qfarm:server:SaveFarm", false, Farms[args.farmKey], args.farmKey)
-    if result_db then
-        args.callback(args.farmKey)
-    end
+    lib.callback.await("mri_Qfarm:server:SaveFarm", false, Farms[args.farmKey], args.farmKey)
+    args.callback(args.farmKey)
 end
 
 local function actionMenu(key)
@@ -1828,8 +1301,6 @@ local function actionMenu(key)
     if farm.config.start.location == nil then
         locationText = locale("actions.farm.set_location")
     end
-    local startDescription = locale("actions.farm.description_nostart", farm.config.nostart and locale("misc.yes") or locale("misc.no"))
-
     local ctx = {
         id = "action_farm",
         title = farm.name:upper(),
@@ -1875,19 +1346,6 @@ local function actionMenu(key)
                 iconAnimation = Config.IconAnimation,
                 onSelect = changeFarmLocation,
                 description = locale("actions.farm.description_location"),
-                disabled = farm.config.nostart,
-                args = {
-                    farmKey = key,
-                    callback = actionMenu
-                }
-            },
-            {
-                title = locale("actions.farm.nostart"),
-                icon = "bolt",
-                iconAnimation = Config.IconAnimation,
-                iconColor = ifThen(farm.config.nostart, ColorScheme.success, ColorScheme.danger),
-                onSelect = changeFarmStart,
-                description = startDescription,
                 args = {
                     farmKey = key,
                     callback = actionMenu
@@ -1905,109 +1363,53 @@ local function actionMenu(key)
                 }
             },
             {
-                title = locale("actions.farm.police_alert"),
-                description = locale("actions.farm.description_police_alert", ifThen(farm.config.policeAlert and farm.config.policeAlert.enabled, locale("misc.yes"), locale("misc.no"))),
-                icon = "bell",
+                title = locale("actions.teleport"),
+                description = locale("actions.description_teleport"),
+                icon = "location-dot",
                 iconAnimation = Config.IconAnimation,
-                onSelect = togglePoliceAlert,
+                onSelect = teleportToFarm,
                 args = {
                     farmKey = key,
                     callback = actionMenu
                 }
+            },
+            {
+                title = locale("actions.export"),
+                description = locale("actions.description_export", locale("actions.farm")),
+                icon = "share-from-square",
+                iconAnimation = Config.IconAnimation,
+                onSelect = exportFarm,
+                args = {
+                    farmKey = key,
+                    callback = actionMenu
+                }
+            },
+            {
+                title = locale("actions.save"),
+                description = locale("actions.description_save"),
+                icon = "floppy-disk",
+                iconAnimation = Config.IconAnimation,
+                onSelect = saveFarm,
+                args = {
+                    farmKey = key,
+                    callback = actionMenu
+                }
+            },
+            {
+                title = locale("actions.delete"),
+                description = locale("actions.description_delete", locale("actions.farm")),
+                icon = "trash",
+                iconAnimation = Config.IconAnimation,
+                iconColor = ColorScheme.danger,
+                onSelect = deleteFarm,
+                args = {
+                    farmKey = key,
+                    callback = ListFarm,
+                    callbackCancel = actionMenu
+                }
             }
         }
     }
-
-    -- Adiciona as opções de chance e tipo de alerta logo após a opção de alerta policial
-    if farm.config.policeAlert and farm.config.policeAlert.enabled then
-        table.insert(ctx.options, 8, {
-            title = locale("actions.farm.police_alert_chance"),
-            description = locale("actions.farm.description_police_alert_chance", farm.config.policeAlert.chance or 30),
-            icon = "percent",
-            iconAnimation = Config.IconAnimation,
-            onSelect = setPoliceAlertChance,
-            args = {
-                farmKey = key,
-                callback = actionMenu
-            }
-        })
-
-        table.insert(ctx.options, 9, {
-            title = locale("actions.farm.police_alert_type"),
-            description = locale("actions.farm.description_police_alert_type", farm.config.policeAlert.type or "drugsell"),
-            icon = "triangle-exclamation",
-            iconAnimation = Config.IconAnimation,
-            onSelect = setPoliceAlertType,
-            args = {
-                farmKey = key,
-                callback = actionMenu
-            }
-        })
-    end
-
-    -- Adiciona as opções restantes
-    table.insert(ctx.options, {
-        title = locale("actions.teleport"),
-        description = locale("actions.description_teleport"),
-        icon = "location-dot",
-        iconAnimation = Config.IconAnimation,
-        onSelect = teleportToFarm,
-        disabled = farm.config.nostart,
-        args = {
-            farmKey = key,
-            callback = actionMenu
-        }
-    })
-
-    table.insert(ctx.options, {
-        title = locale("actions.export"),
-        description = locale("actions.description_export", locale("actions.farm")),
-        icon = "share-from-square",
-        iconAnimation = Config.IconAnimation,
-        onSelect = exportFarm,
-        args = {
-            farmKey = key,
-            callback = actionMenu
-        }
-    })
-
-    table.insert(ctx.options, {
-        title = locale("actions.duplicate"),
-        description = locale("actions.description_duplicate", locale("actions.farm")),
-        icon = "copy",
-        iconAnimation = Config.IconAnimation,
-        onSelect = duplicateFarm,
-        args = {
-            farmKey = key
-        }
-    })
-
-    table.insert(ctx.options, {
-        title = locale("actions.save"),
-        description = locale("actions.description_save"),
-        icon = "floppy-disk",
-        iconAnimation = Config.IconAnimation,
-        onSelect = saveFarm,
-        args = {
-            farmKey = key,
-            callback = actionMenu
-        }
-    })
-
-    table.insert(ctx.options, {
-        title = locale("actions.delete"),
-        description = locale("actions.description_delete", locale("actions.farm")),
-        icon = "trash",
-        iconAnimation = Config.IconAnimation,
-        iconColor = ColorScheme.danger,
-        onSelect = deleteFarm,
-        args = {
-            farmKey = key,
-            callback = ListFarm,
-            callbackCancel = actionMenu
-        }
-    })
-
     lib.registerContext(ctx)
     lib.showContext(ctx.id)
 end
@@ -2041,47 +1443,95 @@ function ListFarm()
     lib.showContext(ctx.id)
 end
 
-
-
 local function manageFarms()
     Items = exports.ox_inventory:Items()
-    local ctx = {
-        id = "menu_farm",
-        menu = "menu_gerencial",
-        title = locale("actions.farm.title"),
-        description = locale("actions.farm.description_title", #Farms),
-        options = {
-            {
-                title = locale("actions.farm.create"),
-                description = locale("actions.farm.description_create"),
-                icon = "square-plus",
-                iconAnimation = Config.IconAnimation,
-                arrow = true,
-                onSelect = setFarmName,
-                args = {
-                    callback = ListFarm
-                }
-            },
-            {
-                title = locale("actions.farm.list"),
-                description = locale("actions.farm.description_list"),
-                icon = "list-ul",
-                iconAnimation = Config.IconAnimation,
-                arrow = true,
-                onSelect = ListFarm
-            },
-            {
-                title = locale("actions.import"),
-                description = locale("actions.description_import", locale("actions.farm")),
-                icon = "file-import",
-                iconAnimation = Config.IconAnimation,
-                onSelect = importFarm
-            }
-        }
-    }
-    lib.registerContext(ctx)
-    lib.showContext(ctx.id)
+    local farmsData = {}
+    for k, v in pairs(Farms) do
+        table.insert(farmsData, {
+            id = k,
+            name = v.name,
+            farmId = v.farmId,
+            group = v.group,
+            config = v.config
+        })
+    end
+
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action = "open",
+        type = "creator",
+        farms = farmsData,
+        config = Config
+    })
 end
+
+RegisterNUICallback('saveGeneral', function(data, cb)
+    local key = data.farmKey
+    local farm = Farms[key]
+    if farm then
+        farm.name = data.name
+        Farms[key] = farm
+        -- Here usually you'd call a server event to save the change
+        lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        lib.notify({ type = 'success', description = 'Nome do farm atualizado!' })
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('deleteFarm', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm then
+        lib.callback.await("mri_Qfarm:server:DeleteFarm", false, farm.farmId)
+        Farms[data.farmKey] = nil
+        lib.notify({ type = 'success', description = 'Farm excluído com sucesso!' })
+        SetNuiFocus(false, false)
+        SendNUIMessage({ action = "close" })
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('createFarm', function(data, cb)
+    local newFarmObj = {
+        name = data.name,
+        config = {
+            start = { location = nil, width = Config.FarmBoxWidth, length = Config.FarmBoxLength },
+            items = {}
+        },
+        group = { name = nil, grade = 0 }
+    }
+    
+    local key = #Farms + 1
+    Farms[key] = newFarmObj
+    -- Call server to create and get a real ID
+    local success = lib.callback.await("mri_Qfarm:server:CreateFarm", false, newFarmObj)
+    if success then
+        lib.notify({ type = 'success', description = 'Novo farm criado!' })
+    end
+    
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = "close" })
+    cb('ok')
+end)
+
+RegisterNUICallback('addPoint', function(data, cb)
+    SetNuiFocus(false, false)
+    addPoints({
+        farmKey = data.farmKey,
+        itemKey = data.itemKey,
+        callback = manageFarms -- Reopen NUI after picking points
+    })
+    cb('ok')
+end)
+
+RegisterNUICallback('tpPoint', function(data, cb)
+    teleportToPoint({
+        farmKey = data.farmKey,
+        itemKey = data.itemKey,
+        pointKey = data.pointIdx + 1, -- +1 because Lua is 1-indexed
+        callback = manageFarms
+    })
+    cb('ok')
+end)
 
 if GetResourceState("mri_Qbox") == "started" then
     exports["mri_Qbox"]:AddManageMenu(

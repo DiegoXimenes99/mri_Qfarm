@@ -5,7 +5,7 @@ use_experimental_fxv2_oal "yes"
 
 description "Responsável por criar e executar as rotas de farm do servidor"
 author "MRI QBOX Team"
-version "MRIQBOX_VERSION"
+version "v1.0.11"
 
 ox_lib "locale"
 
@@ -32,6 +32,11 @@ dependencies {
     "oxmysql",
 }
 
+ui_page "web/index.html"
+
 files {
-    "locales/*.json"
+    "locales/*.json",
+    "web/index.html",
+    "web/style.css",
+    "web/script.js"
 }

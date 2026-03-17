@@ -1,9 +1,8 @@
 Config = {}
 
-Config.AuthorizationManager = "admin"
 Config.Debug = false
 Config.UseTarget = true
-Config.ShowMarker = true
+Config.ShowMarker = false
 Config.ShowOSD = false
 Config.UseEmoteMenu = true
 Config.IconAnimation = "fade"
