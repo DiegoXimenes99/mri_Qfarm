@@ -1471,9 +1471,25 @@ RegisterNUICallback('saveGeneral', function(data, cb)
     if farm then
         farm.name = data.name
         Farms[key] = farm
-        -- Here usually you'd call a server event to save the change
         lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
         lib.notify({ type = 'success', description = 'Nome do farm atualizado!' })
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('duplicateFarm', function(data, cb)
+    local sourceKey = data.farmKey
+    local sourceFarm = Farms[sourceKey]
+    if sourceFarm then
+        local newFarmObj = table.clone(sourceFarm)
+        newFarmObj.farmId = nil -- Crucial: setting to nil makes the server create a new entry
+        newFarmObj.name = data.newName
+        
+        local success = lib.callback.await("mri_Qfarm:server:SaveFarm", false, newFarmObj)
+        if success then
+            lib.notify({ type = 'success', description = 'Rota duplicada com sucesso!' })
+            manageFarms() -- Refresh UI
+        end
     end
     cb('ok')
 end)
@@ -1497,19 +1513,48 @@ RegisterNUICallback('createFarm', function(data, cb)
             start = { location = nil, width = Config.FarmBoxWidth, length = Config.FarmBoxLength },
             items = {}
         },
-        group = { name = nil, grade = 0 }
+        group = { name = {}, grade = 0 } -- Start with empty table for multi-job
     }
     
-    local key = #Farms + 1
-    Farms[key] = newFarmObj
-    -- Call server to create and get a real ID
-    local success = lib.callback.await("mri_Qfarm:server:CreateFarm", false, newFarmObj)
+    local success = lib.callback.await("mri_Qfarm:server:SaveFarm", false, newFarmObj)
     if success then
         lib.notify({ type = 'success', description = 'Novo farm criado!' })
+        manageFarms() -- Refresh UI
     end
-    
-    SetNuiFocus(false, false)
-    SendNUIMessage({ action = "close" })
+    cb('ok')
+end)
+
+RegisterNUICallback('saveGrade', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm then
+        farm.group.grade = tonumber(data.grade) or 0
+        lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        lib.notify({ type = 'success', description = 'Rank mínimo atualizado!' })
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('editGroups', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm then
+        local input = lib.inputDialog('Gerenciar Grupos', {
+            {
+                type = 'multi-select',
+                label = 'Jobs/Gangs Permitidos',
+                description = 'Selecione os grupos que podem acessar esta rota.',
+                options = Utils.GetBaseGroups(),
+                default = farm.group.name,
+                searchable = true
+            }
+        })
+        
+        if input then
+            farm.group.name = input[1]
+            lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+            lib.notify({ type = 'success', description = 'Permissões atualizadas!' })
+        end
+        manageFarms() -- Reopen NUI
+    end
     cb('ok')
 end)
 

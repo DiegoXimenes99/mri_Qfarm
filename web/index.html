@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MRI QBOX Farm System</title>
+    <!-- Fonts -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -11,46 +12,41 @@
     <div id="app" style="display: none;">
         <header>
             <h1>ROTA DE <span>FARME</span></h1>
-            <button class="close-btn" id="close-nui"><i class="fa-solid fa-xmark"></i></button>
+            <button class="close-btn" id="close-nui" title="Fechar">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
         </header>
 
         <main id="main-content">
             <!-- Farm Selection Page -->
             <div id="farm-selector" class="page">
                 <div class="farm-grid" id="farm-list">
-                    <!-- Cards will be injected here via JS -->
+                    <!-- Cards injected via JS -->
                 </div>
-                <!-- Cancel button will be injected here if active -->
-                <div id="cancel-container" style="margin-top: 30px; display: flex; justify-content: center;"></div>
+                <div id="cancel-container" style="margin-top: 32px; display: flex; justify-content: center;"></div>
             </div>
 
             <!-- Creator Dashboard Page -->
             <div id="farm-creator" class="page" style="display: none;">
                 <div class="dashboard-container">
-                    <aside class="sidebar">
-                        <ul class="sidebar-nav">
-                            <li class="nav-item active" data-tab="general"><i class="fa-solid fa-gear"></i> Geral</li>
-                            <li class="nav-item" data-tab="items"><i class="fa-solid fa-boxes-stacked"></i> Itens</li>
-                            <li class="nav-item" data-tab="points"><i class="fa-solid fa-location-dot"></i> Pontos</li>
-                            <li class="nav-item" data-tab="groups"><i class="fa-solid fa-users"></i> Grupos</li>
-                        </ul>
-                    </aside>
-                    <div class="content-panel" id="creator-panel">
-                        <!-- Content will be injected based on tab -->
-                        <div id="tab-general" class="tab-content">
-                            <h3>Configuração Geral</h3>
-                            <div class="form-group">
-                                <label>Nome do Farm</label>
-                                <input type="text" id="farm-name" placeholder="Ex: Farm de Laranja">
-                            </div>
-                            <div class="form-group">
-                                <label>Posição de Início</label>
-                                <div style="display: flex; gap: 10px;">
-                                    <button class="btn btn-primary" id="set-start-loc">Definir Coordenada Atual</button>
-                                    <button class="btn btn-primary" id="tp-start-loc">Teleportar</button>
-                                </div>
-                            </div>
+                    <!-- Top Navigation Bar -->
+                    <nav class="top-nav">
+                        <div class="nav-item active" data-tab="general">
+                            <i class="fa-solid fa-gear"></i> GERAL
                         </div>
+                        <div class="nav-item" data-tab="items">
+                            <i class="fa-solid fa-boxes-stacked"></i> ITENS
+                        </div>
+                        <div class="nav-item" data-tab="points">
+                            <i class="fa-solid fa-location-dot"></i> PONTOS
+                        </div>
+                        <div class="nav-item" data-tab="groups">
+                            <i class="fa-solid fa-users"></i> ACESSO
+                        </div>
+                    </nav>
+
+                    <div class="content-panel" id="creator-panel">
+                        <!-- Content injected via JS based on active tab -->
                     </div>
                 </div>
             </div>
@@ -58,19 +54,20 @@
     </div>
 
     <!-- Reusable Modal System -->
-    <div id="modal-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; display: flex; justify-content: center; align-items: center;">
-        <div class="content-panel" style="width: 400px; background: var(--black-glossy); border: 1px solid var(--border-color);">
+    <div id="modal-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; justify-content: center; align-items: center;">
+        <div class="content-panel" style="width: 440px; background: var(--surface-page); border: 1px solid var(--border-default);">
             <h3 id="modal-title">Título do Modal</h3>
-            <div id="modal-body" style="margin: 20px 0;">
+            <div id="modal-body" style="margin: 24px 0; color: var(--text-secondary); font-size: 0.95rem;">
                 <!-- Body content injected here -->
             </div>
-            <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button class="btn" id="modal-cancel">Cancelar</button>
+            <div id="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 32px;">
+                <button class="btn btn-secondary" id="modal-cancel">Cancelar</button>
                 <button class="btn btn-primary" id="modal-confirm">Confirmar</button>
             </div>
         </div>
     </div>
 
+    <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="script.js"></script>
 </body>
