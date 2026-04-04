@@ -15,6 +15,7 @@ function Utils.GetPedCoords()
     while true do
         Wait(0)
         if IsControlJustReleased(0, 38) then
+            Wait(200)
             lib.hideTextUI()
             return {
                 result = "choose",
@@ -211,6 +212,61 @@ function Utils.SendNotification(data)
             type = data["type"] or "info"
         }
     )
+end
+
+function Utils.DrawText3D(x, y, z, text)
+    local onScreen, _x, _y = World3dToScreen2d(x, y, z)
+    local px, py, pz = table.unpack(GetGameplayCamCoords())
+    local dist = #(vector3(px, py, pz) - vector3(x, y, z))
+    local scale = (1 / dist) * 2
+    local fov = (1 / GetGameplayCamFov()) * 100
+    scale = scale * fov
+    if onScreen then
+        SetTextScale(0.0, 0.35 * scale)
+        SetTextFont(4)
+        SetTextProportional(true)
+        SetTextColour(255, 255, 255, 215)
+        SetTextEntry("STRING")
+        SetTextCentre(true)
+        AddTextComponentString(text)
+        DrawText(_x, _y)
+        local factor = (string.len(text)) / 370
+        DrawRect(_x, _y + 0.0125, 0.015 + factor, 0.03, 41, 11, 41, 100)
+    end
+end
+
+function Utils.EnsureSequence(tbl)
+    if not tbl then return {} end
+    if type(tbl) ~= "table" then return tbl end
+    
+    local keys = {}
+    local isDictionary = false
+    local count = 0
+    
+    for k, v in pairs(tbl) do
+        count = count + 1
+        if type(k) == "string" and tonumber(k) then
+            isDictionary = true
+        end
+        table.insert(keys, k)
+    end
+    
+    if isDictionary or #tbl ~= count then
+        local newTbl = {}
+        -- Sort keys if they are numeric or strings of numbers
+        table.sort(keys, function(a, b)
+            local na, nb = tonumber(a), tonumber(b)
+            if na and nb then return na < nb end
+            return tostring(a) < tostring(b)
+        end)
+        
+        for _, k in ipairs(keys) do
+            table.insert(newTbl, tbl[k])
+        end
+        return newTbl
+    end
+    
+    return tbl
 end
 
 return Utils

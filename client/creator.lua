@@ -1,4 +1,8 @@
 local Utils = lib.require("client/utils")
+local cache = _G.cache or { ped = PlayerPedId() }
+local isCreatorOpen = false
+local currentEditingFarm = nil
+local currentEditingItem = nil
 local newFarm = {
     name = nil,
     config = {
@@ -91,6 +95,37 @@ local function deleteItem(args)
     end
 end
 
+local creatorCheckpoints = {}
+
+local function clearCreatorCheckpoints()
+    for _, cp in pairs(creatorCheckpoints) do
+        DeleteCheckpoint(cp or -1)
+    end
+    creatorCheckpoints = {}
+end
+
+local function refreshCreatorCheckpoints()
+    clearCreatorCheckpoints()
+    if not isCreatorOpen or not currentEditingFarm or not currentEditingItem then return end
+    
+    local farmKey = tonumber(currentEditingFarm)
+    local farm = Farms[farmKey]
+    if not farm or not farm.config.items[currentEditingItem] then return end
+    
+    local points = Utils.EnsureSequence(farm.config.items[currentEditingItem].points)
+    if #points <= 0 then return end
+    
+    for i = 1, #points do
+        local p = points[i]
+        if type(p) == "table" and p.x and p.y and p.z then
+            -- Create a static cylinder checkpoint (type 42) 
+            local cp = CreateCheckpoint(42, p.x, p.y, p.z, p.x, p.y, p.z, 0.8, 0, 155, 255, 150, 0)
+            SetCheckpointCylinderHeight(cp, 2.0, 2.0, 1.0)
+            creatorCheckpoints[#creatorCheckpoints + 1] = cp
+        end
+    end
+end
+
 local function deletePoint(args)
     local result =
         delete(
@@ -98,12 +133,10 @@ local function deletePoint(args)
         Farms[args.farmKey].config.items[args.itemKey].points,
         args.pointKey
     )
-    args.callback(
-        {
-            farmKey = args.farmKey,
-            itemKey = args.itemKey
-        }
-    )
+    if result then
+        lib.callback.await("mri_Qfarm:server:SaveFarm", false, Farms[args.farmKey])
+        args.callback(args.farmKey, "points", args.itemKey)
+    end
 end
 
 local function deleteExtraItem(args)
@@ -169,6 +202,7 @@ local function changePointLocation(args)
     end
     if location then
         Farms[args.farmKey].config.items[args.itemKey].points[args.pointKey] = location
+        lib.callback.await("mri_Qfarm:server:SaveFarm", false, Farms[args.farmKey])
         lib.notify(
             {
                 type = "success",
@@ -176,13 +210,7 @@ local function changePointLocation(args)
             }
         )
     end
-    args.callback(
-        {
-            farmKey = args.farmKey,
-            itemKey = args.itemKey,
-            pointKey = args.pointKey
-        }
-    )
+    args.callback(args.farmKey, "points", args.itemKey)
 end
 
 local function setFarmName(args)
@@ -785,7 +813,11 @@ local function addPoints(args)
         local result = Utils.GetPedCoords()
         keepLoop = result.result == "choose"
         if keepLoop then
-            item.points[#item.points + 1] = result.coords
+            local pos = result.coords
+            -- Explicit conversion to table for JSON safety
+            item.points[#item.points + 1] = { x = pos.x, y = pos.y, z = pos.z }
+            Farms[args.farmKey].config.items[args.itemKey] = item
+            refreshCreatorCheckpoints()
             lib.notify(
                 {
                     type = "success",
@@ -794,13 +826,10 @@ local function addPoints(args)
             )
         end
     end
-    Farms[args.farmKey].config.items[args.itemKey] = item
-    args.callback(
-        {
-            farmKey = args.farmKey,
-            itemKey = args.itemKey
-        }
-    )
+    local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, Farms[args.farmKey])
+    if updatedFarm then Farms[args.farmKey] = updatedFarm end
+    refreshCreatorCheckpoints()
+    args.callback(args.farmKey, "points", args.itemKey)
 end
 
 function listPoints(args)
@@ -1443,8 +1472,18 @@ function ListFarm()
     lib.showContext(ctx.id)
 end
 
-local function manageFarms()
+local function manageFarms(targetFarmId, targetTab, targetItemKey)
+    isCreatorOpen = true
+    -- Only pull from GlobalState if local Farms table is empty or we are forced to
+    if not Farms or next(Farms) == nil then
+        Farms = GlobalState.Farms or {}
+    end
     Items = exports.ox_inventory:Items()
+
+    currentEditingFarm = targetFarmId
+    currentEditingItem = targetItemKey
+    refreshCreatorCheckpoints()
+
     local farmsData = {}
     for k, v in pairs(Farms) do
         table.insert(farmsData, {
@@ -1455,25 +1494,47 @@ local function manageFarms()
             config = v.config
         })
     end
-
+    
     SetNuiFocus(true, true)
+
+    if Config.Debug then
+        print(string.format("^3[manageFarms] Sending open to NUI. TargetFarmId: %s, TargetTab: %s, FarmsCount: %d^7", tostring(targetFarmId), tostring(targetTab), #farmsData))
+    end
+
     SendNUIMessage({
         action = "open",
         type = "creator",
         farms = farmsData,
-        config = Config
+        config = Config,
+        targetFarmId = targetFarmId and tonumber(targetFarmId) or nil,
+        targetTab = targetTab,
+        targetItemKey = targetItemKey
     })
 end
 
 RegisterNUICallback('saveGeneral', function(data, cb)
-    local key = data.farmKey
+    local key = tonumber(data.farmKey)
     local farm = Farms[key]
     if farm then
         farm.name = data.name
+        if not farm.config.start.ped then 
+            farm.config.start.ped = { model = "s_m_m_scientist_01", enabled = false } 
+        end
+        farm.config.start.ped.enabled = data.ped.enabled
+        farm.config.start.ped.model = data.ped.model
+        -- farm.config.start.ped.coords remains as is
+        
         Farms[key] = farm
-        lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
-        lib.notify({ type = 'success', description = 'Nome do farm atualizado!' })
+        local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        if updatedFarm then Farms[key] = updatedFarm end
+        lib.notify({ type = 'success', description = 'Configurações gerais atualizadas!' })
+        manageFarms(farm.farmId, "general")
     end
+    cb('ok')
+end)
+
+RegisterNUICallback('refreshFarms', function(data, cb)
+    manageFarms()
     cb('ok')
 end)
 
@@ -1495,13 +1556,13 @@ RegisterNUICallback('duplicateFarm', function(data, cb)
 end)
 
 RegisterNUICallback('deleteFarm', function(data, cb)
-    local farm = Farms[data.farmKey]
+    local farmKey = tonumber(data.farmKey)
+    local farm = Farms[farmKey]
     if farm then
         lib.callback.await("mri_Qfarm:server:DeleteFarm", false, farm.farmId)
-        Farms[data.farmKey] = nil
+        Farms[farmKey] = nil
         lib.notify({ type = 'success', description = 'Farm excluído com sucesso!' })
-        SetNuiFocus(false, false)
-        SendNUIMessage({ action = "close" })
+        manageFarms() -- Back to list
     end
     cb('ok')
 end)
@@ -1519,7 +1580,7 @@ RegisterNUICallback('createFarm', function(data, cb)
     local success = lib.callback.await("mri_Qfarm:server:SaveFarm", false, newFarmObj)
     if success then
         lib.notify({ type = 'success', description = 'Novo farm criado!' })
-        manageFarms() -- Refresh UI
+        manageFarms() -- Refresh UI to show the new card
     end
     cb('ok')
 end)
@@ -1528,8 +1589,10 @@ RegisterNUICallback('saveGrade', function(data, cb)
     local farm = Farms[data.farmKey]
     if farm then
         farm.group.grade = tonumber(data.grade) or 0
-        lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        if updatedFarm then Farms[data.farmKey] = updatedFarm end
         lib.notify({ type = 'success', description = 'Rank mínimo atualizado!' })
+        manageFarms(farm.farmId, "groups")
     end
     cb('ok')
 end)
@@ -1550,10 +1613,11 @@ RegisterNUICallback('editGroups', function(data, cb)
         
         if input then
             farm.group.name = input[1]
-            lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+            local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+            if updatedFarm then Farms[data.farmKey] = updatedFarm end
             lib.notify({ type = 'success', description = 'Permissões atualizadas!' })
         end
-        manageFarms() -- Reopen NUI
+        manageFarms(farm.farmId, "groups")
     end
     cb('ok')
 end)
@@ -1568,14 +1632,192 @@ RegisterNUICallback('addPoint', function(data, cb)
     cb('ok')
 end)
 
-RegisterNUICallback('tpPoint', function(data, cb)
-    teleportToPoint({
-        farmKey = data.farmKey,
-        itemKey = data.itemKey,
-        pointKey = data.pointIdx + 1, -- +1 because Lua is 1-indexed
-        callback = manageFarms
-    })
+RegisterNUICallback('removePoint', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm and farm.config.items[data.itemKey] then
+        table.remove(farm.config.items[data.itemKey].points, data.pointIdx + 1)
+        lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        lib.notify({ type = 'success', description = 'Ponto removido!' })
+        manageFarms(farm.farmId, "points")
+    end
     cb('ok')
+end)
+
+RegisterNUICallback('addFarmItem', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm then
+        local input = lib.inputDialog('Adicionar Item', {
+            {
+                type = 'select',
+                label = 'Selecionar Item',
+                options = Utils.GetBaseItems(),
+                searchable = true,
+                required = true
+            }
+        })
+
+        if input then
+            local itemKey = input[1]
+            if not farm.config.items[itemKey] then
+                farm.config.items[itemKey] = {
+                    min = 1,
+                    max = 1,
+                    points = {},
+                    collectTime = 2000,
+                    customName = itemKey
+                }
+                local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+                if updatedFarm then Farms[data.farmKey] = updatedFarm end
+                lib.notify({ type = 'success', description = 'Item adicionado à rota!' })
+            else
+                lib.notify({ type = 'error', description = 'Este item já existe nesta rota!' })
+            end
+        end
+        manageFarms(farm.farmId, "items")
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('removeItem', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm and farm.config.items[data.itemKey] then
+        farm.config.items[data.itemKey] = nil
+        local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        if updatedFarm then Farms[data.farmKey] = updatedFarm end
+        lib.notify({ type = 'success', description = 'Item removido da rota!' })
+        manageFarms(farm.farmId, "items")
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('saveItemConfig', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm and farm.config.items[data.itemKey] then
+        local item = farm.config.items[data.itemKey]
+        item.customName = data.config.customName
+        item.min = data.config.min
+        item.max = data.config.max
+        item.collectTime = data.config.collectTime
+        
+        local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+        if updatedFarm then Farms[data.farmKey] = updatedFarm end
+        lib.notify({ type = 'success', description = 'Configurações do item salvas!' })
+        manageFarms(farm.farmId, "items")
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('updatePoint', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm and farm.config.items[data.itemKey] then
+        SetNuiFocus(false, false)
+        local result = Utils.GetPedCoords()
+        if result.result == "choose" then
+            local pos = result.coords
+            if Config.Debug then print(string.format("^3[updatePoint] Captured coords: %s^7", tostring(pos))) end
+            -- Explicitly convert vector3 to plain table for NUI/JSON safety
+            farm.config.items[data.itemKey].points[data.pointIdx + 1] = { x = pos.x, y = pos.y, z = pos.z }
+            local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+            if updatedFarm then Farms[data.farmKey] = updatedFarm end
+            lib.notify({ type = 'success', description = 'Ponto atualizado!' })
+        else
+            if Config.Debug then print("^1[updatePoint] Point selection cancelled or failed.^7") end
+        end
+        manageFarms(farm.farmId, "points", data.itemKey)
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('tpStart', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm and farm.config.start.location then
+        isCreatorOpen = false
+        SetNuiFocus(false, false)
+        SendNUIMessage({ action = "close" })
+        Utils.TpToLoc(farm.config.start.location)
+        lib.notify({ type = 'info', description = 'Teleportado para o início da rota!' })
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('tpPoint', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm and farm.config.items[data.itemKey] then
+        local points = Utils.EnsureSequence(farm.config.items[data.itemKey].points)
+        local point = points[data.pointIdx + 1]
+        if point then
+            isCreatorOpen = false
+            SetNuiFocus(false, false)
+            SendNUIMessage({ action = "close" })
+            Utils.TpToLoc(point)
+            lib.notify({ type = 'info', description = 'Teleportado para o ponto de coleta!' })
+        else
+            if Config.Debug then print("^1[tpPoint] Point not found at index: " .. tostring(data.pointIdx + 1)) end
+        end
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('capturePedData', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm then
+        SetNuiFocus(false, false)
+        lib.notify({ type = 'info', description = 'Posicione-se e pressione [E] para capturar sua posição e direção.' })
+        local result = Utils.GetPedCoords()
+        if result.result == "choose" then
+            if not farm.config.start.ped then farm.config.start.ped = {} end
+            local coords = result.coords
+            local heading = GetEntityHeading(cache.ped)
+            farm.config.start.ped.coords = { x = coords.x, y = coords.y, z = coords.z, w = heading }
+            farm.config.start.ped.model = data.model
+            
+            lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+            lib.notify({ type = 'success', description = 'Posição do Ped capturada!' })
+        end
+        manageFarms(farm.farmId, "general")
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('setStartLocation', function(data, cb)
+    local farm = Farms[data.farmKey]
+    if farm then
+        SetNuiFocus(false, false)
+        local result = Utils.GetPedCoords()
+        if result.result == "choose" then
+            local pos = result.coords
+            farm.config.start.location = { x = pos.x, y = pos.y, z = pos.z }
+            local updatedFarm = lib.callback.await("mri_Qfarm:server:SaveFarm", false, farm)
+            if updatedFarm then Farms[data.farmKey] = updatedFarm end
+            lib.notify({ type = 'success', description = 'Local de início definido!' })
+        end
+        manageFarms(farm.farmId, "general")
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('updateEditorState', function(data, cb)
+    currentEditingFarm = data.farmKey
+    currentEditingItem = data.itemKey
+    refreshCreatorCheckpoints()
+    cb('ok')
+end)
+
+RegisterNUICallback('close', function(data, cb)
+    isCreatorOpen = false
+    clearCreatorCheckpoints()
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = "close" })
+    cb('ok')
+end)
+
+CreateThread(function()
+    while true do
+        local sleep = 1000
+        -- Text drawing removed as requested to leave only checkpoints.
+        -- This thread now primarily sleeps to maintain 0.00ms impact.
+        Wait(sleep)
+    end
 end)
 
 if GetResourceState("mri_Qbox") == "started" then
@@ -1598,3 +1840,7 @@ else
         end
     )
 end
+AddEventHandler('onResourceStop', function(resourceName)
+    if GetCurrentResourceName() ~= resourceName then return end
+    clearCreatorCheckpoints()
+end)

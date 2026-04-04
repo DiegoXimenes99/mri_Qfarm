@@ -17,11 +17,19 @@ $(document).ready(() => {
 
     // Tab Switching in Creator
     $(document).on('click', '.nav-item', function() {
+        if (!currentFarmData || currentFarmData.selectedIdx === undefined) return;
         const tab = $(this).data('tab');
         $('.nav-item').removeClass('active');
         $(this).addClass('active');
         switchTab(tab);
     });
+
+    // Back to Route Selection
+    $(document).on('click', '#back-to-routes', () => {
+        showCreator(currentFarmData.farms, currentFarmData.config);
+    });
+
+    $('#create-new-farm-btn').click(() => createNewFarm());
 
     // Message Listener
     window.addEventListener('message', (event) => {
@@ -33,6 +41,14 @@ $(document).ready(() => {
                 showSelector(data.farms);
             } else if (data.type === 'creator') {
                 showCreator(data.farms, data.config);
+                
+                // State Persistence: Auto-select farm and tab if target is provided
+                if (data.targetFarmId !== undefined && data.targetFarmId !== null) {
+                    const idx = data.farms.findIndex(f => f.farmId == data.targetFarmId);
+                    if (idx !== -1) {
+                        selectRoute(idx, data.targetTab || 'general', data.targetItemKey);
+                    }
+                }
             }
         } else if (data.action === 'close') {
             $('#app').fadeOut(300);
@@ -43,6 +59,7 @@ $(document).ready(() => {
 function switchTab(tab) {
     currentTab = tab;
     renderCreatorContent();
+    updateClientEditorState();
 }
 
 function showSelector(farms) {
@@ -89,55 +106,115 @@ function showSelector(farms) {
 function showCreator(farms, config) {
     $('.page').hide();
     $(`#${Pages.CREATOR}`).show();
-    currentFarmData = farms;
+    $('#creator-route-view').show();
+    $('#creator-editor-view').hide();
+    $('.top-nav').hide();
+
+    currentFarmData = { farms: farms, config: config };
+    
+    const $list = $('#creator-route-list');
+    $list.empty();
+
+    farms.forEach((farm, i) => {
+        const $card = $(`
+            <div class="farm-card">
+                <i class="fa-solid fa-route main-icon"></i>
+                <h2>${farm.name}</h2>
+                <div style="display: flex; gap: 8px; margin-top: auto; width: 100%;">
+                    <button class="btn btn-primary" style="flex: 2;">EDITAR</button>
+                    <button class="btn btn-secondary" onclick="event.stopPropagation(); duplicateFarm(${i})" title="Duplicar"><i class="fa-solid fa-copy"></i></button>
+                </div>
+            </div>
+        `);
+
+        $card.find('.btn-primary').click(() => selectRoute(i));
+        $list.append($card);
+    });
+}
+
+function selectRoute(idx, tab = 'general', itemKey = null) {
+    currentFarmData.selectedIdx = idx;
+    $('#creator-route-view').hide();
+    $('#creator-editor-view').show();
+    $('.top-nav').show();
+    
     // Reset tabs
     $('.nav-item').removeClass('active');
-    $('.nav-item[data-tab="general"]').addClass('active');
-    switchTab('general');
+    $(`.nav-item[data-tab="${tab}"]`).addClass('active');
+    
+    currentTab = tab;
+    
+    // If we have a target item, we need to ensure the renderCreatorContent uses it
+    if (tab === 'points' && itemKey) {
+        // We'll handle this in renderCreatorContent by checking a temporary property
+        currentFarmData.targetItemKey = itemKey;
+    }
+
+    renderCreatorContent();
+    updateClientEditorState();
 }
 
 function renderCreatorContent() {
-    const $panel = $('#creator-panel');
+    const $panel = $('#tab-content');
     $panel.empty();
 
-    const selectedIdx = $('#creator-select-farm').val() || 0;
-    const currentFarm = currentFarmData[selectedIdx];
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    if (!farm) return;
 
     if (currentTab === 'general') {
         $panel.append(`
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
-                <h3 style="font-size: 1.25rem; font-weight: 700;">Configuração Geral</h3>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-success" onclick="createNewFarm()"><i class="fa-solid fa-plus"></i> NOVO</button>
-                    ${currentFarm ? `<button class="btn btn-secondary" onclick="duplicateFarm(${selectedIdx})"><i class="fa-solid fa-copy"></i> DUPLICAR</button>` : ''}
-                </div>
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 32px;">
+                <button class="btn btn-secondary" id="back-to-routes"><i class="fa-solid fa-arrow-left"></i> VOLTAR</button>
+                <h3 style="font-size: 1.25rem; font-weight: 700;">Configuração: ${farm.name}</h3>
             </div>
             
             <div class="form-group">
-                <label>Selecionar Farm para Edição</label>
-                <select id="creator-select-farm" onchange="renderCreatorContent()">
-                    ${currentFarmData.map((f, i) => `<option value="${i}" ${i == selectedIdx ? 'selected' : ''}>${f.name}</option>`).join('')}
-                </select>
+                <label>Nome do Farm</label>
+                <input type="text" id="edit-farm-name" value="${farm.name}">
+            </div>
+            
+            <div class="form-group" style="margin-top: 24px;">
+                <label>Posição de Início (Onde puxa a rota)</label>
+                <div style="display: flex; align-items: center; justify-content: space-between; background: var(--surface-secondary); padding: 12px 16px; border-radius: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 0.85rem; color: var(--text-secondary);">
+                        <i class="fa-solid fa-location-dot" style="margin-right: 8px; color: var(--accent-primary);"></i>
+                        ${farm.config.start.location ? 'Local Definido' : 'Local não definido'}
+                    </span>
+                    <div style="display: flex; gap: 4px;">
+                        <button class="btn btn-secondary btn-sm" onclick="setStartLocation()" title="Definir"><i class="fa-solid fa-map-pin"></i></button>
+                        ${farm.config.start.location ? `<button class="btn btn-secondary btn-sm" onclick="tpStart()" title="Teleportar"><i class="fa-solid fa-location-arrow"></i></button>` : ''}
+                    </div>
+                </div>
+
+                <div style="background: var(--surface-card); padding: 12px; border: 1px solid var(--border-default); border-radius: 8px; margin-top: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <input type="checkbox" id="ped-enabled" style="width: 16px; height: 16px;" ${farm.config.start.ped?.enabled ? 'checked' : ''} onchange="togglePedSettings()">
+                        <label style="margin-bottom: 0; cursor: pointer;" for="ped-enabled">Habilitar NPC no Início</label>
+                    </div>
+                    <div id="ped-settings-container" style="display: ${farm.config.start.ped?.enabled ? 'block' : 'none'}; border-top: 1px solid var(--border-subtle); padding-top: 10px;">
+                        <label style="font-size: 9px;">Modelo do Ped</label>
+                        <input type="text" id="ped-model" value="${farm.config.start.ped?.model || 's_m_m_scientist_01'}" style="margin-bottom: 8px;">
+                        <button class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.75rem;" onclick="capturePedData()">
+                            <i class="fa-solid fa-camera"></i> CAPTURAR MINHA POSIÇÃO + HEADING
+                        </button>
+                        <div style="margin-top: 6px; font-size: 0.7rem; color: var(--text-muted);">
+                            ${farm.config.start.ped?.coords ? 'Status: <span style="color: var(--status-success)">Posição Salva</span>' : 'Status: <span style="color: var(--status-warning)">Aguardando Captura</span>'}
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            ${currentFarm ? `
-                <div class="form-group">
-                    <label>Nome do Farm</label>
-                    <input type="text" id="edit-farm-name" value="${currentFarm.name}">
-                </div>
-                
-                <div style="display: flex; gap: 12px; margin-top: 32px;">
-                    <button class="btn btn-primary" onclick="saveGeneral()">SALVAR ALTERAÇÕES</button>
-                    <button class="btn btn-danger" onclick="deleteFarmConfirm()">EXCLUIR FARM</button>
-                </div>
-            ` : '<p style="color: var(--text-muted);">Nenhum farm encontrado. Crie um novo no botão superior.</p>'}
+            <div style="display: flex; gap: 12px; margin-top: 32px;">
+                <button class="btn btn-primary" id="save-general-btn" onclick="saveGeneral()" style="flex: 1;">SALVAR ALTERAÇÕES</button>
+                <button class="btn btn-danger" onclick="deleteFarmConfirm()" style="flex: 1;">EXCLUIR FARM</button>
+            </div>
         `);
     } else if (currentTab === 'items') {
-        const items = currentFarm ? Object.entries(currentFarm.config.items) : [];
+        const items = Object.entries(farm.config.items);
 
         $panel.append(`
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
-                <h3 style="font-size: 1.25rem; font-weight: 700;">Itens do Farm</h3>
+                <h3 style="font-size: 1.25rem; font-weight: 700;">Itens da Rota</h3>
                 <button class="btn btn-primary" onclick="addFarmItem()"><i class="fa-solid fa-plus"></i> ADICIONAR ITEM</button>
             </div>
             <div class="item-list">
@@ -148,43 +225,59 @@ function renderCreatorContent() {
                             <span class="data-label">${key}</span>
                         </div>
                         <div style="display: flex; gap: 8px; z-index: 1;">
-                            <button class="btn btn-secondary" onclick="editItem('${key}')" title="Editar"><i class="fa-solid fa-pen"></i></button>
-                            <button class="btn btn-danger" style="padding: 0 12px;" onclick="removeItem('${key}')" title="Remover"><i class="fa-solid fa-trash"></i></button>
+                            <button class="btn btn-secondary" onclick="editItem('${key}')" title="Configurações"><i class="fa-solid fa-gear"></i></button>
+                            <button class="btn btn-danger" style="padding: 0 12px;" onclick="removeItemConfirm('${key}')" title="Remover"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </div>
                 `).join('')}
-                ${items.length === 0 ? '<p style="color: var(--text-muted);">Nenhum item configurado para este farm.</p>' : ''}
+                ${items.length === 0 ? '<p style="color: var(--text-muted);">Nenhum item configurado. Clique em ADICIONAR para começar.</p>' : ''}
             </div>
         `);
     } else if (currentTab === 'points') {
-        const firstItemKey = currentFarm ? Object.keys(currentFarm.config.items)[0] : null;
-        const farmPoints = firstItemKey ? currentFarm.config.items[firstItemKey].points || [] : [];
+        const items = Object.keys(farm.config.items);
+        let selectedItem = currentFarmData.targetItemKey || $('#point-item-selector').val() || items[0];
+        
+        // Clean up the target once used or if it's invalid
+        if (currentFarmData.targetItemKey) {
+            delete currentFarmData.targetItemKey;
+        }
+
+        const points = selectedItem ? (farm.config.items[selectedItem].points || []) : [];
 
         $panel.append(`
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
-                <h3 style="font-size: 1.25rem; font-weight: 700;">Pontos de Farm</h3>
-                <button class="btn btn-primary" onclick="addFarmPoint()"><i class="fa-solid fa-location-dot"></i> ADICIONAR PONTO</button>
+                <h3 style="font-size: 1.25rem; font-weight: 700;">Pontos de Coleta</h3>
+                <button class="btn btn-primary" onclick="addFarmPoint()"><i class="fa-solid fa-location-dot"></i> ADICIONAR PONTOS</button>
             </div>
-            <p style="margin-bottom: 20px; color: var(--text-secondary); font-size: 0.9rem;">Configure os pontos para: <span class="data-value">${firstItemKey || 'Nenhum item'}</span></p>
+
+            <div class="form-group" style="margin-bottom: 24px;">
+                <label>Ver pontos para o item:</label>
+                <select id="point-item-selector" onchange="renderCreatorContent()">
+                    ${items.map(k => `<option value="${k}" ${k === selectedItem ? 'selected' : ''}>${farm.config.items[k].customName || k}</option>`).join('')}
+                </select>
+                ${items.length === 0 ? '<p style="color: var(--status-error); font-size: 0.8rem; margin-top: 8px;">Adicione itens antes de configurar pontos!</p>' : ''}
+            </div>
+
             <div class="point-list">
-                ${farmPoints.map((p, i) => `
+                ${points.map((p, i) => `
                     <div class="farm-card" style="flex-direction: row; justify-content: space-between; padding: 16px 24px; align-items: center; margin-bottom: 12px; min-height: auto;">
                         <div style="z-index: 1;">
                             <span class="data-label">Ponto #${i + 1}</span><br>
                             <span class="data-value" style="font-size: 0.9rem;">${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}</span>
                         </div>
                         <div style="display: flex; gap: 8px; z-index: 1;">
-                            <button class="btn btn-secondary" onclick="tpToPoint(${i})"><i class="fa-solid fa-location-crosshairs"></i> TP</button>
-                            <button class="btn btn-danger" style="padding: 0 12px;" onclick="removePoint(${i})"><i class="fa-solid fa-trash"></i></button>
+                            <button class="btn btn-secondary" onclick="tpToPoint('${selectedItem}', ${i})" title="Teleportar"><i class="fa-solid fa-location-crosshairs"></i></button>
+                            <button class="btn btn-secondary" onclick="updatePoint('${selectedItem}', ${i})" title="Definir aqui"><i class="fa-solid fa-location-dot"></i></button>
+                            <button class="btn btn-danger" style="padding: 0 12px;" onclick="removePointConfirm('${selectedItem}', ${i})" title="Remover"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </div>
                 `).join('')}
-                ${farmPoints.length === 0 ? '<p style="color: var(--text-muted);">Adicione itens primeiro para começar a marcar pontos.</p>' : ''}
+                ${selectedItem && points.length === 0 ? '<p style="color: var(--text-muted);">Nenhum ponto registrado para este item.</p>' : ''}
             </div>
         `);
     } else if (currentTab === 'groups') {
-        const groups = currentFarm ? currentFarm.group.name || [] : [];
-        const grade = currentFarm ? currentFarm.group.grade || 0 : 0;
+        const groups = farm.group.name || [];
+        const grade = farm.group.grade || 0;
 
         $panel.append(`
             <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom:32px;">Controle de Acesso</h3>
@@ -192,7 +285,7 @@ function renderCreatorContent() {
             <div class="form-group">
                 <label>Grupos Permitidos (Jobs/Gangs)</label>
                 <div style="margin-bottom: 12px; color: var(--text-secondary); font-size: 0.9rem;">
-                    Atual: <span class="data-value">${Array.isArray(groups) ? groups.join(', ') : (groups || 'Público')}</span>
+                    Atual: <span class="data-value">${Array.isArray(groups) && groups.length > 0 ? groups.join(', ') : 'Público'}</span>
                 </div>
                 <button class="btn btn-secondary" onclick="editGroups()"><i class="fa-solid fa-users-gear"></i> EDITAR GRUPOS</button>
             </div>
@@ -200,13 +293,6 @@ function renderCreatorContent() {
             <div class="form-group">
                 <label>Grade/Rank Mínimo</label>
                 <input type="number" id="edit-farm-grade" value="${grade}" onchange="saveGrade()">
-            </div>
-            
-            <div class="info-card" style="background: var(--accent-subtle); padding: 16px; border-radius: 8px; border-left: 4px solid var(--accent-primary); margin-top: 32px;">
-                <p style="font-size: 0.85rem; color: var(--text-secondary);">
-                    <i class="fa-solid fa-circle-info" style="color: var(--accent-primary); margin-right: 8px;"></i>
-                    As rotas globais permitem que múltiplos grupos acessem o mesmo farm. Deixe o campo de grupos vazio para tornar a rota <strong>pública</strong>.
-                </p>
             </div>
         `);
     }
@@ -230,7 +316,7 @@ function createNewFarm() {
 }
 
 function duplicateFarm(idx) {
-    const farm = currentFarmData[idx];
+    const farm = currentFarmData.farms[idx];
     openModal('Duplicar Rota', `
         <p>Deseja duplicar a rota <strong>${farm.name}</strong>?</p>
         <div class="form-group" style="margin-top: 20px;">
@@ -250,20 +336,70 @@ function duplicateFarm(idx) {
     });
 }
 
+function refreshFarms() {
+    $.post(`https://${ResourceName}/refreshFarms`, JSON.stringify({}));
+}
+
 function saveGeneral() {
-    const selectedIdx = $('#creator-select-farm').val();
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
     const name = $('#edit-farm-name').val();
-    const farm = currentFarmData[selectedIdx];
-    
+    const $btn = $('#save-general-btn');
+    const originalText = $btn.html();
+
+    const pedConfig = {
+        enabled: $('#ped-enabled').is(':checked'),
+        model: $('#ped-model').val()
+    };
+
     $.post(`https://${ResourceName}/saveGeneral`, JSON.stringify({ 
         farmKey: farm.id,
-        name: name 
+        name: name,
+        ped: pedConfig
+    }));
+
+    $btn.addClass('btn-success').removeClass('btn-primary').html('<i class="fa-solid fa-check"></i> SALVO!');
+    setTimeout(() => {
+        $btn.removeClass('btn-success').addClass('btn-primary').html(originalText);
+    }, 2000);
+}
+
+function tpStart() {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    $.post(`https://${ResourceName}/tpStart`, JSON.stringify({ farmKey: farm.id }));
+}
+
+function togglePedSettings() {
+    const enabled = $('#ped-enabled').is(':checked');
+    $('#ped-settings-container').toggle(enabled);
+}
+
+function capturePedData() {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    const model = $('#ped-model').val();
+    $.post(`https://${ResourceName}/capturePedData`, JSON.stringify({ farmKey: farm.id, model: model }));
+    $('#app').fadeOut(200);
+}
+
+function setStartLocation() {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    $.post(`https://${ResourceName}/setStartLocation`, JSON.stringify({ farmKey: farm.id }));
+    $('#app').fadeOut(200);
+}
+
+function updateClientEditorState() {
+    if (!currentFarmData || currentFarmData.selectedIdx === undefined) return;
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    const items = Object.keys(farm.config.items);
+    const selectedItem = $('#point-item-selector').val() || items[0];
+    
+    $.post(`https://${ResourceName}/updateEditorState`, JSON.stringify({
+        farmKey: farm.id,
+        itemKey: selectedItem
     }));
 }
 
 function deleteFarmConfirm() {
-    const selectedIdx = $('#creator-select-farm').val();
-    const farm = currentFarmData[selectedIdx];
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
     
     openModal('Excluir Farm', `
         <p>Tem certeza que deseja excluir o farm <strong>${farm.name}</strong>?</p>
@@ -274,58 +410,117 @@ function deleteFarmConfirm() {
     });
 }
 
+function addFarmItem() {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    $.post(`https://${ResourceName}/addFarmItem`, JSON.stringify({ farmKey: farm.id }));
+    $('#app').fadeOut(200);
+}
+
+function editItem(itemKey) {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    const item = farm.config.items[itemKey];
+
+    openModal(`Configurar: ${itemKey}`, `
+        <div class="form-group">
+            <label>Nome Personalizado</label>
+            <input type="text" id="item-custom-name" value="${item.customName || ''}">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+                <label>Qtd Mínima</label>
+                <input type="number" id="item-min" value="${item.min || 1}">
+            </div>
+            <div class="form-group">
+                <label>Qtd Máxima</label>
+                <input type="number" id="item-max" value="${item.max || 1}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Tempo de Coleta (ms)</label>
+            <input type="number" id="item-time" value="${item.collectTime || 2000}">
+        </div>
+    `, () => {
+        $.post(`https://${ResourceName}/saveItemConfig`, JSON.stringify({
+            farmKey: farm.id,
+            itemKey: itemKey,
+            config: {
+                customName: $('#item-custom-name').val(),
+                min: parseInt($('#item-min').val()),
+                max: parseInt($('#item-max').val()),
+                collectTime: parseInt($('#item-time').val())
+            }
+        }));
+        return true;
+    });
+}
+
+function removeItemConfirm(itemKey) {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    openModal('Remover Item', `<p>Deseja remover o item <strong>${itemKey}</strong> desta rota?</p>`, () => {
+        $.post(`https://${ResourceName}/removeItem`, JSON.stringify({ farmKey: farm.id, itemKey: itemKey }));
+        return true;
+    });
+}
+
 function addFarmPoint() {
-    const selectedIdx = $('#creator-select-farm').val();
-    const currentFarm = currentFarmData[selectedIdx];
-    const firstItem = Object.keys(currentFarm.config.items)[0];
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    const selectedItem = $('#point-item-selector').val();
     
-    if (!firstItem) {
-        openModal('Aviso', '<p>Adicione pelo menos um item na aba ITENS antes de marcar pontos!</p>', () => true);
+    if (!selectedItem) {
+        openModal('Erro', '<p>Adicione um item antes de marcar pontos!</p>', () => true);
         return;
     }
 
     $.post(`https://${ResourceName}/addPoint`, JSON.stringify({
-        farmKey: currentFarm.id,
-        itemKey: firstItem
+        farmKey: farm.id,
+        itemKey: selectedItem
+    }));
+    $('#app').fadeOut(200);
+}
+
+function removePointConfirm(itemKey, pointIdx) {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    openModal('Remover Ponto', `<p>Deseja remover este ponto de coleta?</p>`, () => {
+        $.post(`https://${ResourceName}/removePoint`, JSON.stringify({
+            farmKey: farm.id,
+            itemKey: itemKey,
+            pointIdx: pointIdx
+        }));
+        return true;
+    });
+}
+
+function tpToPoint(itemKey, idx) {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    $.post(`https://${ResourceName}/tpPoint`, JSON.stringify({
+        farmKey: farm.id,
+        itemKey: itemKey,
+        pointIdx: idx
+    }));
+}
+
+function updatePoint(itemKey, idx) {
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    $.post(`https://${ResourceName}/updatePoint`, JSON.stringify({
+        farmKey: farm.id,
+        itemKey: itemKey,
+        pointIdx: idx
     }));
     $('#app').fadeOut(200);
 }
 
 function saveGrade() {
-    const selectedIdx = $('#creator-select-farm').val();
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
     const grade = $('#edit-farm-grade').val();
-    const farm = currentFarmData[selectedIdx];
-    
-    $.post(`https://${ResourceName}/saveGrade`, JSON.stringify({ 
-        farmKey: farm.id,
-        grade: grade 
-    }));
+    $.post(`https://${ResourceName}/saveGrade`, JSON.stringify({ farmKey: farm.id, grade: grade }));
 }
 
 function editGroups() {
-    const selectedIdx = $('#creator-select-farm').val();
-    const farm = currentFarmData[selectedIdx];
-    
-    $.post(`https://${ResourceName}/editGroups`, JSON.stringify({ 
-        farmKey: farm.id 
-    }));
-    // Since complex multi-select is easier in Lua ox_lib, we use a callback to ox_lib
+    const farm = currentFarmData.farms[currentFarmData.selectedIdx];
+    $.post(`https://${ResourceName}/editGroups`, JSON.stringify({ farmKey: farm.id }));
     $('#app').fadeOut(200);
 }
 
-function tpToPoint(idx) {
-    const selectedIdx = $('#creator-select-farm').val();
-    const currentFarm = currentFarmData[selectedIdx];
-    const firstItem = Object.keys(currentFarm.config.items)[0];
-
-    $.post(`https://${ResourceName}/tpPoint`, JSON.stringify({
-        farmKey: currentFarm.id,
-        itemKey: firstItem,
-        pointIdx: idx
-    }));
-}
-
-// Modal System logic
 function openModal(title, bodyHtml, onConfirm) {
     $('#modal-title').text(title);
     $('#modal-body').html(bodyHtml);

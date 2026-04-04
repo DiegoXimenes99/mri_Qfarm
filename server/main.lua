@@ -14,9 +14,12 @@ local function itemAdd(source, item, amount)
     end
 end
 
+local function isAdmin(source)
+    return exports.qbx_core:HasPermission(source, 'admin') or exports.qbx_core:HasPermission(source, 'god')
+end
+
 local function dispatchEvents(source, response)
     GlobalState:set("Farms", Farms, true)
-    Wait(2000)
     TriggerClientEvent("mri_Qfarm:client:LoadFarms", -1)
     if response then
         lib.notify(source, response)
@@ -24,20 +27,43 @@ local function dispatchEvents(source, response)
 end
 
 local function locateFarm(id)
-    for k, v in pairs(Farms) do
-        if v.farmId == id then
-            return k
-        end
-    end
+    return id -- With refactored table, the key is the id
 end
 
 local function cleanNullPoints(config)
+    if not config or not config.items then return config end
     for name, value in pairs(config.items) do
-        local newPoints = {}
-        for k, v in pairs(value.points) do
-            newPoints[#newPoints + 1] = v
+        if value.points then
+            local newPoints = {}
+            for k, v in pairs(value.points) do
+                if v then
+                    -- Ensure coordinate is a plain table, not a vector3
+                    if type(v) == "vector3" then
+                        newPoints[#newPoints + 1] = { x = v.x, y = v.y, z = v.z }
+                    else
+                        newPoints[#newPoints + 1] = v
+                    end
+                end
+            end
+            config.items[name].points = newPoints
+        else
+            config.items[name].points = {}
         end
-        config.items[name].points = newPoints
+    end
+    -- Also clean start location
+    if config.start and config.start.location then
+        local loc = config.start.location
+        if type(loc) == "vector3" then
+            config.start.location = { x = loc.x, y = loc.y, z = loc.z }
+        end
+    end
+    -- Also clean ped coords
+    if config.start and config.start.ped and config.start.ped.coords then
+        local pc = config.start.ped.coords
+        if type(pc) == "vector3" then
+            -- We can't get heading on server like this, so we just convert to table
+            config.start.ped.coords = { x = pc.x, y = pc.y, z = pc.z }
+        end
     end
     return config
 end
@@ -134,6 +160,24 @@ lib.callback.register(
             return
         end
 
+        -- Anti-Cheat: Distance check
+        local playerCoords = GetEntityCoords(GetPlayerPed(src))
+        local isNear = false
+        for _, p in pairs(itemCfg.points or {}) do
+            if p.x and p.y and p.z then
+                local dist = #(playerCoords - vector3(p.x, p.y, p.z))
+                if dist < 15.0 then -- 15m tolerance for desync/movement
+                    isNear = true
+                    break
+                end
+            end
+        end
+
+        if not isNear then
+            print(string.format("^1[getRewardItem] Exploiter detected! Player %s (ID: %s) tried to claim reward from distance.^7", GetPlayerName(src), tostring(src)))
+            return false
+        end
+
         local qtd = math.random(itemCfg.min or 0, itemCfg.max or 1)
         itemAdd(src, itemName, qtd)
         if (itemCfg["extraItems"]) then
@@ -149,7 +193,22 @@ lib.callback.register(
     "mri_Qfarm:server:SaveFarm",
     function(source, farm)
         local source = source
+        if not isAdmin(source) then
+            print(string.format("^1[SaveFarm] Unauthorized attempt to save farm by Player %s^7", GetPlayerName(source)))
+            return nil
+        end
         local response = {type = "success", description = locale("actions.saved")}
+        
+        -- Clean points before saving to ensure they are arrays
+        farm.config = cleanNullPoints(farm.config)
+        
+        if Config.Debug then
+            print(string.format("^3[SaveFarm] Saving farm %s (ID: %s)^7", farm.name, tostring(farm.farmId)))
+            local itemsCount = 0
+            for _ in pairs(farm.config.items) do itemsCount = itemsCount + 1 end
+            print(string.format("^3[SaveFarm] Items count: %d^7", itemsCount))
+        end
+
         if farm.farmId then
             local affectedRows =
                 MySQL.Sync.execute(
@@ -160,7 +219,7 @@ lib.callback.register(
                 response.type = "error"
                 response.description = locale("actions.not_saved")
             end
-            Farms[locateFarm(farm.farmId)] = farm
+            Farms[farm.farmId] = farm
             dispatchEvents(source, response)
         else
             local farmId =
@@ -170,11 +229,11 @@ lib.callback.register(
                 response.description = locale("actions.not_saved")
             else
                 farm.farmId = farmId
-                Farms[#Farms + 1] = farm
+                Farms[farmId] = farm
             end
             dispatchEvents(source, response)
         end
-        return true
+        return farm -- Return updated farm object with potential new ID
     end
 )
 
@@ -182,6 +241,10 @@ lib.callback.register(
     "mri_Qfarm:server:DeleteFarm",
     function(source, farmId)
         local source = source
+        if not isAdmin(source) then
+            print(string.format("^1[DeleteFarm] Unauthorized attempt to delete farm by Player %s^7", GetPlayerName(source)))
+            return false
+        end
         local response = {type = "success", description = locale("actions.deleted")}
         if not farmId then
             TriggerClientEvent("ox_lib:notify", source, response)
@@ -192,7 +255,7 @@ lib.callback.register(
             response.type = "error"
             response.description = locale("actions.delete_error", farmId)
         end
-        Farms[locateFarm(farmId)] = nil
+        Farms[farmId] = nil
         dispatchEvents(source, response)
         return true
     end
@@ -213,11 +276,11 @@ AddEventHandler(
                         config = cleanNullPoints(json.decode(row.farmConfig)),
                         group = json.decode(row.farmGroup)
                     }
-                    farms[_] = farm
+                    farms[row.farmId] = farm -- Using farmId as key
                 end
             end
             Farms = farms
-            dispatchEvents(source)
+            dispatchEvents(nil)
         end
     end
 )

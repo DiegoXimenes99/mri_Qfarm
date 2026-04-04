@@ -12,9 +12,14 @@
     <div id="app" style="display: none;">
         <header>
             <h1>ROTA DE <span>FARME</span></h1>
-            <button class="close-btn" id="close-nui" title="Fechar">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
+            <div style="display: flex; gap: 8px;">
+                <button class="close-btn" onclick="refreshFarms()" title="Atualizar Tudo">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+                <button class="close-btn" id="close-nui" title="Fechar">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
         </header>
 
         <main id="main-content">
@@ -46,7 +51,23 @@
                     </nav>
 
                     <div class="content-panel" id="creator-panel">
-                        <!-- Content injected via JS based on active tab -->
+                        <!-- Route Selection View (default) -->
+                        <div id="creator-route-view">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+                                <h3 style="font-size: 1.25rem; font-weight: 700;">Gerenciar Rotas</h3>
+                                <button class="btn btn-success" id="create-new-farm-btn"><i class="fa-solid fa-plus"></i> NOVA ROTA</button>
+                            </div>
+                            <div class="farm-grid" id="creator-route-list">
+                                <!-- Farm cards for editing -->
+                            </div>
+                        </div>
+
+                        <!-- Editor Tabs (hidden until route selected) -->
+                        <div id="creator-editor-view" style="display: none;">
+                            <div id="tab-content">
+                                <!-- Content injected via JS based on active tab -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -55,7 +76,7 @@
 
     <!-- Reusable Modal System -->
     <div id="modal-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; justify-content: center; align-items: center;">
-        <div class="content-panel" style="width: 440px; background: var(--surface-page); border: 1px solid var(--border-default);">
+        <div class="modal-box" style="width: 440px; background: var(--surface-page); border: 1px solid var(--border-default);">
             <h3 id="modal-title">Título do Modal</h3>
             <div id="modal-body" style="margin: 24px 0; color: var(--text-secondary); font-size: 0.95rem;">
                 <!-- Body content injected here -->

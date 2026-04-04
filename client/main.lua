@@ -15,6 +15,7 @@ local currentPoint = 0
 local currentSequence = 0
 local markerCoords = nil
 local blip = 0
+local checkpoint = nil
 
 local startFarm = false
 
@@ -26,6 +27,7 @@ local farmTargets = {}
 local farmPoints = {}
 local farmPointZones = {}
 local farmPointTargets = {}
+local spawnedPeds = {}
 local defaultBlipColor = 5
 
 local blipSettings = {
@@ -102,10 +104,9 @@ local function emptyTargetZones(tableObj, type)
                 end
             end
         end
-        table.clear(tableObj)
-    else
+        for k in pairs(tableObj) do tableObj[k] = nil end
         if Config.Debug then
-            print("Table is empty")
+            print("Table cleared")
         end
     end
 end
@@ -127,6 +128,11 @@ local function stopFarm()
         emptyTargetZones(farmZones, "zone")
     end
 
+    if checkpoint then
+        DeleteCheckpoint(checkpoint)
+        checkpoint = nil
+    end
+
     deleteBlip(blip)
     markerCoords = nil
     currentPoint = 0
@@ -137,51 +143,23 @@ local function farmThread()
     CreateThread(
         function()
             while (startFarm) do
-                if Config.ShowMarker and markerCoords then
+                local sleep = 1000
+                if Config.ShowMarker and markerCoords and not Config.UseCheckpoint then
                     local playerLoc = GetEntityCoords(cache.ped)
-                    if
-                        GetDistanceBetweenCoords(
-                            playerLoc.x,
-                            playerLoc.y,
-                            playerLoc.z,
-                            markerCoords.x,
-                            markerCoords.y,
-                            markerCoords.z,
-                            true
-                        ) <= 30
-                     then
-                        DrawMarker(
-                            2,
-                            markerCoords.x,
-                            markerCoords.y,
-                            markerCoords.z + 0.3,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.3,
-                            0.3,
-                            0.3,
-                            255,
-                            255,
-                            0,
-                            80,
-                            0,
-                            1,
-                            2,
-                            0
-                        )
+                    local dist = #(playerLoc - vector3(markerCoords.x, markerCoords.y, markerCoords.z))
+                    if dist <= 30.0 then
+                        sleep = 0
+                        DrawMarker(2, markerCoords.x, markerCoords.y, markerCoords.z + 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.3, 255, 255, 0, 80, false, true, 2, false, "", "", false)
                     end
                 end
+                
                 if IsControlJustReleased(0, 168) then
                     stopFarm()
                 end
                 if Config.ShowOSD then
                     showHelpNotification(locale("actions.stop_f7"), 1000, 1)
                 end
-                Wait(0)
+                Wait(sleep)
             end
         end
     )
@@ -214,6 +192,10 @@ local function finishPicking()
         ExecuteCommand("e c")
     else
         ClearPedTasks(PlayerPedId())
+    end
+    if checkpoint then
+        DeleteCheckpoint(checkpoint)
+        checkpoint = nil
     end
     deleteBlip(blip)
 end
@@ -261,7 +243,15 @@ local function nextTask(shuffle, unlimited)
     blipSettings.coords = markerCoords
     blipSettings.text = locale("misc.farm_point")
     blipSettings.sprite = 465
+    blipSettings.sprite = 465
     blip = createBlip(blipSettings)
+
+    if Config.UseCheckpoint then
+        if checkpoint then DeleteCheckpoint(checkpoint) end
+        -- Type 42 is a cylinder with a circle and arrow.
+        checkpoint = CreateCheckpoint(42, markerCoords.x, markerCoords.y, markerCoords.z, markerCoords.x, markerCoords.y, markerCoords.z, 0.8, 0, 155, 255, 150, 0)
+        SetCheckpointCylinderHeight(checkpoint, 2.0, 2.0, 1.0)
+    end
 end
 
 local function openPoint(point, itemName, item)
@@ -302,7 +292,10 @@ local function openPoint(point, itemName, item)
         duration,
         function()
             -- Done
-            lib.callback.await("mri_Qfarm:server:getRewardItem", false, itemName, playerFarm.farmId)
+            local fId = playerFarm and playerFarm.farmId
+            if fId then
+                lib.callback.await("mri_Qfarm:server:getRewardItem", false, itemName, fId)
+            end
             finishPicking()
         end,
         function()
@@ -420,7 +413,8 @@ local function checkInteraction(point, item)
 end
 
 local function loadFarmZones(itemName, item)
-    for point, zone in pairs(item.points) do
+    local points = Utils.EnsureSequence(item.points)
+    for point, zone in pairs(points) do
         zone = vector3(zone.x, zone.y, zone.z)
         local label = ("farmZone-%s-%s"):format(itemName, point)
         if Config.UseTarget then
@@ -495,6 +489,10 @@ local function startFarming(args)
     playerFarm = args.farm
     local itemName = args.itemName
     local farmItem = playerFarm.config.items[itemName]
+    
+    -- Ensure points is a sequence
+    farmItem.points = Utils.EnsureSequence(farmItem.points)
+    
     loadFarmZones(itemName, farmItem)
     startFarm = true
     farmingItem = itemName
@@ -610,49 +608,95 @@ end
 local function loadFarms()
     emptyTargetZones(farmZones, "zone")
     emptyTargetZones(farmTargets, "target")
+    
+    -- Clear existing peds
+    for _, ped in pairs(spawnedPeds) do
+        if DoesEntityExist(ped) then
+            DeleteEntity(ped)
+        end
+    end
+    spawnedPeds = {}
+
     for k, v in pairs(Farms) do
         local isPublic = not v.group["name"] or #v.group["name"] == 0
         if
             isPublic or roleCheck(PlayerJob, v.group.name, v.group.grade) or
                 roleCheck(PlayerGang, v.group.name, v.group.grade)
          then
-            if v.config.start["location"] then
-                local start = v.config.start
-                start.location = vector3(start.location.x, start.location.y, start.location.z)
+            local start = v.config.start
+            if start["location"] or (start.ped and start.ped.enabled and start.ped.coords) then
                 local zoneName = ("farm-%s"):format("start" .. k)
-                if Config.UseTarget then
-                    table.insert(
-                        farmTargets,
-                        exports.ox_target:addSphereZone(
-                            {
-                                coords = start.location,
-                                name = zoneName,
-                                options = {
+                
+                -- Handle Ped Spawning
+                if start.ped and start.ped.enabled and start.ped.coords then
+                    local pData = start.ped
+                    if Config.Debug then
+                        print(string.format("Attempting to spawn Ped for farm %s. Model: %s", v.name, pData.model))
+                    end
+                    local success = lib.requestModel(pData.model, 5000)
+                    if not success then
+                        print(string.format("^1Error: Failed to load model %s for farm %s^7", pData.model, v.name))
+                    else
+                        local pCoords = pData.coords
+                        local ped = CreatePed(4, GetHashKey(pData.model), pCoords.x, pCoords.y, pCoords.z - 1.0, pCoords.w, false, false)
+                        SetEntityAsMissionEntity(ped, true, true)
+                        SetBlockingOfNonTemporaryEvents(ped, true)
+                        FreezeEntityPosition(ped, true)
+                        SetEntityInvincible(ped, true)
+                        table.insert(spawnedPeds, ped)
+                        if Config.Debug then print("^2Ped spawned successfully!^7") end
+
+                        if Config.UseTarget then
+                            exports.ox_target:addLocalEntity(ped, {
+                                {
                                     icon = "fa-solid fa-screwdriver-wrench",
                                     label = string.format("Abrir %s", v.name),
                                     onSelect = function()
                                         checkAndOpen(v, isPublic)
                                     end
                                 }
-                            }
+                            })
+                        end
+                    end
+                end
+
+                -- Handle Zone for non-ped or as fallback
+                if start.location and (not start.ped or not start.ped.enabled) then
+                    start.location = vector3(start.location.x, start.location.y, start.location.z)
+                    if Config.UseTarget then
+                        table.insert(
+                            farmTargets,
+                            exports.ox_target:addSphereZone(
+                                {
+                                    coords = start.location,
+                                    name = zoneName,
+                                    options = {
+                                        icon = "fa-solid fa-screwdriver-wrench",
+                                        label = string.format("Abrir %s", v.name),
+                                        onSelect = function()
+                                            checkAndOpen(v, isPublic)
+                                        end
+                                    }
+                                }
+                            )
                         )
-                    )
-                else
-                    farmZones[#farmZones + 1] = {
-                        IsInside = false,
-                        zone = BoxZone:Create(
-                            start.location,
-                            start.length,
-                            start.width,
-                            {
-                                name = zoneName,
-                                minZ = start.location.z - 1.0,
-                                maxZ = start.location.z + 1.0,
-                                debugPoly = Config.Debug
-                            }
-                        ),
-                        farm = v
-                    }
+                    else
+                        farmZones[#farmZones + 1] = {
+                            IsInside = false,
+                            zone = BoxZone:Create(
+                                start.location,
+                                start.length,
+                                start.width,
+                                {
+                                    name = zoneName,
+                                    minZ = start.location.z - 1.0,
+                                    maxZ = start.location.z + 1.0,
+                                    debugPoly = Config.Debug
+                                }
+                            ),
+                            farm = v
+                        }
+                    end
                 end
             end
         end
